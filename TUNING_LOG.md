@@ -60,8 +60,10 @@ Tested with 3 paraphrased questions:
 - OpenAI `text-embedding-3-small` (1536 dimensions)
 - Cosine similarity metric
 
-## Notes
-- This threshold may need adjustment based on:
+## Caveats
+- The 0.70 threshold was baselined against a small subset of common IT and HR questions (password resets, VPN access, PTO requests) to establish a quick working baseline
+- Production use across other domains (engineering, legal, finance) would likely require additional testing and threshold adjustment
+- This threshold may also shift based on:
   - Domain-specific terminology
   - Question length variations
   - Multi-language support
