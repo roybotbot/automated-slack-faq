@@ -9,7 +9,7 @@ Paraphrased questions were not clustering together. The initial threshold of 0.8
 3. Analyzed score distribution for similar vs. different questions
 4. Set threshold based on empirical data
 
-## Test Results (2024-02-16)
+## Test Results Subset
 
 ### Base Question
 `"How do I reset my password?"`
