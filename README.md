@@ -87,17 +87,17 @@ flowchart TD
   - Greetings ("How are you?")
   - Time-sensitive queries ("What time is the meeting?")
   - Vague requests ("Can someone help me?")
-- **Why:** Reduces API costs by filtering 90% of non-questions with cheap regex before using LLM
+- **Why:** Reduces API costs by filtering majority of non-questions with cheap regex before using LLM
 - **Trade-off:** Adds ~1-2 seconds latency per message, but ensures only genuine FAQ-worthy questions are clustered
 
 ### 2. LLM Choice: Anthropic Claude vs OpenAI GPT
 - **Why Claude:** More reliable at following strict formatting instructions (Question: / Answer: structure)
-- **Experience:** OpenAI models (GPT-4o-mini, GPT-3.5-turbo) produced inconsistent or empty outputs with structured prompts
+- **Experience:** OpenAI models (GPT-4o-mini, GPT-3.5-turbo) produced inconsistent or empty outputs with structured prompts (I suspect this was an issue with the n8n node, but didn't investigate further).
 - **Use cases:** Claude handles both question filtering and FAQ draft generation
 
 ### 3. Embedding Model: OpenAI `text-embedding-3-small`
 - **Why:** Good balance of performance (1536 dimensions) and cost ($0.02 per 1M tokens)
-- **Alternatives considered:** `text-embedding-3-large` (higher accuracy but 3x cost), Sentence-BERT (self-hosted but more complex)
+- **Alternatives considered:** `text-embedding-3-large` (higher accuracy but 3x cost)
 
 ### 4. Similarity Metric: Cosine Similarity
 - **Why:** Standard for embedding comparison, robust to question length variations
@@ -221,7 +221,7 @@ For small-scale personal use (<100 questions), the n8n-only approach is viable a
 3. **No user deduplication** - Same exact question from same user can inflate cluster count
 4. **Basic auth only** - `/reset` and `/debug` endpoints are protected by a single API key (no role-based access)
 5. **LLM filtering adds latency** - ~1-2 seconds per message for Claude API call
-6. **n8n Notion node incompatibility** - n8n's built-in Notion node hasn't been updated for the Notion API 2025-09-03 version. Worked around this by using an HTTP Request node that calls the Notion API directly with the correct `Notion-Version` header
+6. **n8n Notion node incompatibility** - n8n's built-in Notion node hasn't been updated for the Notion API 2025-09-03 version. Worked around this by using an HTTP Request node that calls the Notion API directly
 
 ### Potential Enhancements
 - [ ] Complete draft prevention loop (return `faq_drafted` in `/check` response, check in n8n IF node)
