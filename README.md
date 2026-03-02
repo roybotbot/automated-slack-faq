@@ -102,7 +102,7 @@ flowchart TD
 ### 4. Similarity Metric: Cosine Similarity
 - **Why:** Standard for embedding comparison, robust to question length variations
 - **Threshold:** 0.70 (empirically tuned, see [TUNING_LOG.md](TUNING_LOG.md))
-- **Rationale:** Paraphrased questions score 0.70-0.75, different topics score <0.55
+- **Rationale:** Questions scoring ≥ 0.70 are treated as paraphrases and clustered together. Different topics score < 0.55, unrelated questions < 0.15
 
 ### 5. Clustering Logic: Incremental
 - **Why:** Real-time clustering as questions arrive (vs. batch processing)
