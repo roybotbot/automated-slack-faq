@@ -129,11 +129,9 @@ flowchart TD
 | `POST` | `/reset` | Clear database (testing only) | 🔒 Requires API key |
 | `POST` | `/debug` | Inspect similarity scores | 🔒 Requires API key |
 
-**Production URL:** `https://question-cluster-api-production.up.railway.app`
-
 ### Example: Check a Question
 ```bash
-curl -X POST https://question-cluster-api-production.up.railway.app/check \
+curl -X POST http://localhost:8000/check \
   -H "Content-Type: application/json" \
   -d '{
     "text": "How do I reset my password?",
