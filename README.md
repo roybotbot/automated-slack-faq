@@ -241,6 +241,7 @@ A sanitized export of the n8n workflow is included at [`n8n-workflow.json`](n8n-
 
 1. Import the JSON file into your n8n instance
 2. Replace placeholder values:
+   - `YOUR_API_URL` — in the Cluster-Check and Mark-Drafted nodes
    - `YOUR_SLACK_CHANNEL_ID` — in the Slack Trigger and Send a message nodes
    - `YOUR_NOTION_DATABASE_ID` — in the Notion HTTP Request node
 3. Add your credentials for Slack, Anthropic, and Notion

@@ -254,7 +254,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://question-cluster-api-production.up.railway.app/check",
+        "url": "YOUR_API_URL/check",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"text\": \"{{ $('Slack Trigger').item.json.text }}\",\n  \"source_channel\": \"{{ $('Slack Trigger').item.json.channel }}\",\n  \"source_user\": \"{{ $('Slack Trigger').item.json.user }}\"\n}",
@@ -272,7 +272,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://question-cluster-api-production.up.railway.app/clusters/' + $('Output-Format').first().json.cluster_id + '/mark-drafted' }}",
+        "url": "={{ 'YOUR_API_URL/clusters/' + $('Output-Format').first().json.cluster_id + '/mark-drafted' }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
