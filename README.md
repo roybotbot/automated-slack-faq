@@ -1,6 +1,6 @@
 # Automated Slack FAQ
 
-**Automatic FAQ generation from repeated Slack questions using semantic similarity clustering.**
+**Automatic FAQ generation from repeated Slack questions using semantic similarity clustering, with auto-reply for previously answered questions.**
 
 > 📚 Portfolio project demonstrating knowledge management automation, embedding-based clustering, and cross-platform integration (Slack → API → Notion).
 
@@ -18,6 +18,7 @@ An automated system that:
 2. **Clusters** semantically similar questions using embeddings
 3. **Triggers** FAQ draft creation when a question is asked 3+ times
 4. **Routes** drafts to Notion for review and publication
+5. **Auto-replies** in Slack when a new question matches an existing FAQ with high confidence
 
 ## Architecture
 
@@ -29,24 +30,33 @@ flowchart TD
 
     subgraph n8n["n8n Workflow (Railway)"]
         B[Slack Trigger]
-        C{"Regex Filter
+        C{"If — Regex Filter
         has '?' or question words"}
-        D["LLM Question Filter
+        D["LLM-Question-Filter
         Anthropic Claude"]
-        E{Genuine question?}
+        E{"lf1 — Genuine
+        question?"}
         F["Cluster-Check
         POST /check"]
-        G{"count ≥ 3 AND
-        not yet drafted?"}
-        H["LLM FAQ Drafter
+        AR{"Should-Auto-Reply
+        faq_drafted = true AND
+        similarity ≥ 0.70?"}
+        ARS["Auto-Reply
+        Slack message with
+        answer + Notion link"]
+        G{"lf2 — count ≥ 3 AND
+        faq_drafted = false?"}
+        H["LLM-Write-FAQ
         Anthropic Claude"]
         I["Output-Format
         parse Question/Answer"]
-        J["Notion API
-        HTTP Request — create page"]
+        J["HTTP Request
+        Notion API — create page"]
         K["Mark-Drafted
-        POST /mark-drafted"]
-        L[Slack Notification]
+        POST /mark-drafted
+        stores Notion URL + answer"]
+        L["Send a message
+        Slack notification"]
     end
 
     subgraph API["Python API (Railway)"]
@@ -69,7 +79,9 @@ flowchart TD
     M --> N
     N --> O
     O --> P
-    F --> G
+    F --> AR
+    AR -->|true| ARS
+    AR -->|false| G
     G -->|yes| H
     G -->|no| X3[store only]
     H --> I
@@ -104,15 +116,21 @@ flowchart TD
 - **Threshold:** 0.70 (empirically tuned, see [TUNING_LOG.md](TUNING_LOG.md))
 - **Rationale:** ≥ 0.70 = paraphrases (clustered), 0.55–0.70 = related but different questions (not clustered), < 0.55 = unrelated (not clustered). Threshold was baselined against a small subset of common IT and HR questions — may need adjustment for other domains
 
-### 5. Clustering Logic: Incremental
+### 5. Auto-Reply Threshold
+- **Threshold:** 0.70 similarity AND `faq_drafted = true`
+- **Why:** Only replies when a question closely matches a cluster that already has a published FAQ
+- **Behavior:** Posts the stored FAQ answer and a link to the Notion article directly in the Slack channel
+- **What it doesn't catch:** Off-topic questions (e.g. "How do I use a car?") never cluster with existing FAQs due to low similarity, so they never trigger an auto-reply
+
+### 6. Clustering Logic: Incremental
 - **Why:** Real-time clustering as questions arrive (vs. batch processing)
 - **Trade-off:** Simpler to implement, but doesn't handle cluster merging or splitting
 
-### 6. Storage: SQLite on Railway Volume
+### 7. Storage: SQLite on Railway Volume
 - **Why:** Simple, serverless-friendly, sufficient for moderate scale (<10K questions)
 - **Limitations:** No built-in vector search (could migrate to PostgreSQL with pgvector for larger scale)
 
-### 7. FAQ Trigger Threshold: 3 occurrences
+### 8. FAQ Trigger Threshold: 3 occurrences
 - **Why:** Balances noise reduction (not every question) with timeliness (catches real patterns quickly)
 - **Draft Prevention:** After first FAQ is created, cluster is marked `faq_drafted: true` to prevent duplicates
 - **Configurable:** Can be adjusted based on channel activity
@@ -125,7 +143,9 @@ flowchart TD
 | `GET` | `/health` | Health check | ✅ Live |
 | `POST` | `/check` | Cluster a new question | ✅ Live |
 | `GET` | `/clusters` | List all clusters | ✅ Live |
-| `POST` | `/clusters/{id}/mark-drafted` | Mark FAQ as drafted | ✅ Live |
+| `POST` | `/clusters/{id}/mark-drafted` | Mark FAQ as drafted, store Notion URL + answer | ✅ Live |
+| `GET` | `/questions` | List all stored questions | 🔒 Requires API key |
+| `POST` | `/migrate` | Run schema migrations | 🔒 Requires API key |
 | `POST` | `/reset` | Clear database (testing only) | 🔒 Requires API key |
 | `POST` | `/debug` | Inspect similarity scores | 🔒 Requires API key |
 
@@ -150,8 +170,22 @@ Response:
     "How do I reset my password?",
     "Where do I change my password?",
     "I forgot my password, how do I get a new one?"
-  ]
+  ],
+  "faq_drafted": true,
+  "faq_url": "https://www.notion.so/How-do-I-reset-my-password-abc123",
+  "faq_answer": "Reset your password through Okta at company.okta.com, or ask IT in #it-help.",
+  "similarity_score": 0.91
 }
+```
+
+### Example: Mark a Cluster as Drafted
+```bash
+curl -X POST http://localhost:8000/clusters/6/mark-drafted \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notion_url": "https://www.notion.so/How-do-I-reset-my-password-abc123",
+    "answer": "Reset your password through Okta at company.okta.com, or ask IT in #it-help."
+  }'
 ```
 
 ## Deployment
@@ -172,7 +206,7 @@ Response:
 | `OPENAI_API_KEY` | OpenAI API key for embeddings |
 | `DB_PATH` | Database file path (default: `/data/questions.db`) |
 | `PORT` | Auto-assigned by Railway |
-| `ADMIN_API_KEY` | API key for protected endpoints (`/reset`, `/debug`) |
+| `ADMIN_API_KEY` | API key for protected endpoints (`/reset`, `/debug`, `/questions`, `/migrate`) |
 
 **n8n Service:**
 | Variable | Description |
@@ -219,21 +253,21 @@ For small-scale personal use (<100 questions), the n8n-only approach is viable a
 1. **No cluster merging** - If similar questions are added before threshold is reached, they may form separate clusters
 2. **No multi-language support** - Embeddings are English-optimized
 3. **No user deduplication** - Same exact question from same user can inflate cluster count
-4. **Basic auth only** - `/reset` and `/debug` endpoints are protected by a single API key (no role-based access)
+4. **Basic auth only** - Protected endpoints use a single API key (no role-based access)
 5. **LLM filtering adds latency** - ~1-2 seconds per message for Claude API call
 6. **n8n Notion node incompatibility** - n8n's built-in Notion node hasn't been updated for the Notion API 2025-09-03 version. Worked around this by using an HTTP Request node that calls the Notion API directly
+7. **No input sanitization** - Special characters in Slack messages (quotes, backslashes) can break JSON body in n8n Cluster-Check node
 
 ### Potential Enhancements
-- [ ] Complete draft prevention loop (return `faq_drafted` in `/check` response, check in n8n IF node)
 - [ ] Add user deduplication (don't count same user asking same question twice)
 - [ ] Implement cluster merging (periodic job to merge high-similarity clusters)
-- [ ] Add authentication for admin endpoints
 - [ ] Migrate to PostgreSQL with pgvector for better vector search
 - [ ] Add analytics dashboard (cluster trends, top questions, response times)
 - [ ] Support multi-language questions (use multilingual embedding models)
 - [ ] Add feedback loop (mark drafted FAQs as "helpful" or "not helpful")
 - [ ] Cache LLM filter results to reduce API costs for repeated message patterns
 - [ ] Add confidence scores to LLM filter (not just yes/no, but 0-100% confidence)
+- [ ] Sanitize input text in n8n Cluster-Check node (escape special characters that break JSON body)
 
 ## n8n Workflow
 
@@ -242,9 +276,27 @@ A sanitized export of the n8n workflow is included at [`n8n-workflow.json`](n8n-
 1. Import the JSON file into your n8n instance
 2. Replace placeholder values:
    - `YOUR_API_URL` — in the Cluster-Check and Mark-Drafted nodes
-   - `YOUR_SLACK_CHANNEL_ID` — in the Slack Trigger and Send a message nodes
-   - `YOUR_NOTION_DATABASE_ID` — in the Notion HTTP Request node
+   - `YOUR_SLACK_CHANNEL_ID` — in the Slack Trigger, Auto-Reply, and Send a message nodes
+   - `YOUR_NOTION_DATABASE_ID` — in the HTTP Request (Notion) node
 3. Add your credentials for Slack, Anthropic, and Notion
+
+### Workflow Nodes
+
+| Node | Type | Purpose |
+|------|------|---------|
+| **Slack Trigger** | Trigger | Listens for messages in a Slack channel |
+| **If** | IF | Regex filter — has `?` or question words |
+| **LLM-Question-Filter** | LLM Chain | Claude determines if message is a genuine question |
+| **lf1** | IF | Checks if Claude responded "yes" |
+| **Cluster-Check** | HTTP Request | POST /check to clustering API |
+| **Should-Auto-Reply** | IF | Checks `faq_drafted = true` AND `similarity_score ≥ 0.70` |
+| **Auto-Reply** | Slack | Posts FAQ answer + Notion link in channel |
+| **lf2** | IF | Checks `cluster_count ≥ 3` AND `faq_drafted = false` |
+| **LLM-Write-FAQ** | LLM Chain | Claude drafts a FAQ entry from clustered questions |
+| **Output-Format** | Code | Parses Question/Answer from LLM output |
+| **HTTP Request** | HTTP Request | Creates page in Notion database |
+| **Mark-Drafted** | HTTP Request | POST /mark-drafted with Notion URL + answer |
+| **Send a message** | Slack | Notifies channel that a new FAQ draft was created |
 
 ## Testing
 
@@ -252,8 +304,12 @@ See [TUNING_LOG.md](TUNING_LOG.md) for threshold calibration methodology.
 
 ### Run Tests Locally
 ```bash
+# Run automated tests
+python -m pytest test_auto_reply.py -v
+
 # Reset database
-curl -X POST http://localhost:8000/reset
+curl -X POST http://localhost:8000/reset \
+  -H "X-Api-Key: YOUR_KEY"
 
 # Add questions and verify clustering
 curl -X POST http://localhost:8000/check \
@@ -263,6 +319,7 @@ curl -X POST http://localhost:8000/check \
 # Check similarity scores
 curl -X POST http://localhost:8000/debug \
   -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
   -d '{"text": "Where do I change my password?"}'
 ```
 
