@@ -269,27 +269,7 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/env-check")
-def env_check():
-    """Temporary: confirm ADMIN_API_KEY is loaded. Remove after debugging."""
-    key = os.environ.get("ADMIN_API_KEY")
-    return {
-        "admin_key_set": key is not None,
-        "admin_key_length": len(key) if key else 0,
-        "module_level_key_set": ADMIN_API_KEY is not None,
-        "module_level_key_length": len(ADMIN_API_KEY) if ADMIN_API_KEY else 0,
-        "keys_match": key == ADMIN_API_KEY
-    }
 
-
-@app.get("/debug-header")
-def debug_header(x_api_key: str = Header(default=None)):
-    """Temporary: show exactly what value FastAPI receives for X-Api-Key header."""
-    return {
-        "received": x_api_key,
-        "received_length": len(x_api_key) if x_api_key else 0,
-        "matches_env": x_api_key == ADMIN_API_KEY
-    }
     
 @app.post("/reset", dependencies=[Depends(verify_admin_key)])
 def reset_db():
