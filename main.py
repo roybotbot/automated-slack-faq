@@ -261,7 +261,11 @@ def mark_drafted(cluster_id: int, body: MarkDraftedInput | None = None):
         )
     conn.commit()
     conn.close()
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "received_notion_url": body.notion_url if body else None,
+        "received_answer": body.answer if body else None
+    }
 
 
 @app.get("/health")
