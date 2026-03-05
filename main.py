@@ -45,6 +45,8 @@ def get_db():
             topic TEXT,
             count INTEGER DEFAULT 1,
             faq_drafted INTEGER DEFAULT 0,
+            faq_url TEXT,
+            faq_answer TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -82,6 +84,9 @@ class QuestionResponse(BaseModel):
     cluster_count: int
     similar_questions: list[str]
     faq_drafted: bool = False
+    faq_url: str | None = None
+    faq_answer: str | None = None
+    similarity_score: float = 0.0
 
 
 @app.post("/check", response_model=QuestionResponse)
@@ -136,7 +141,7 @@ def check_question(question: QuestionInput):
         
         # Get cluster info
         cluster = conn.execute(
-            "SELECT count, faq_drafted FROM clusters WHERE id = ?", (cluster_id,)
+            "SELECT count, faq_drafted, faq_url, faq_answer FROM clusters WHERE id = ?", (cluster_id,)
         ).fetchone()
         
         similar = conn.execute(
@@ -149,7 +154,10 @@ def check_question(question: QuestionInput):
             cluster_id=cluster_id,
             cluster_count=cluster[0],
             similar_questions=[r[0] for r in similar],
-            faq_drafted=bool(cluster[1])
+            faq_drafted=bool(cluster[1]),
+            faq_url=cluster[2],
+            faq_answer=cluster[3],
+            similarity_score=best_similarity
         )
     
     elif best_match and not best_match["cluster_id"]:
@@ -184,7 +192,8 @@ def check_question(question: QuestionInput):
             status="matched",
             cluster_id=cluster_id,
             cluster_count=2,
-            similar_questions=similar
+            similar_questions=similar,
+            similarity_score=best_similarity
         )
     
     else:
@@ -232,13 +241,24 @@ def list_clusters():
     return result
 
 
+class MarkDraftedInput(BaseModel):
+    notion_url: str | None = None
+    answer: str | None = None
+
+
 @app.post("/clusters/{cluster_id}/mark-drafted")
-def mark_drafted(cluster_id: int):
-    """Mark a cluster as having had its FAQ drafted. Prevents re-triggering."""
+def mark_drafted(cluster_id: int, body: MarkDraftedInput | None = None):
+    """Mark a cluster as having had its FAQ drafted. Optionally store the Notion URL and answer."""
     conn = get_db()
-    conn.execute(
-        "UPDATE clusters SET faq_drafted = 1 WHERE id = ?", (cluster_id,)
-    )
+    if body and (body.notion_url or body.answer):
+        conn.execute(
+            "UPDATE clusters SET faq_drafted = 1, faq_url = ?, faq_answer = ? WHERE id = ?",
+            (body.notion_url, body.answer, cluster_id)
+        )
+    else:
+        conn.execute(
+            "UPDATE clusters SET faq_drafted = 1 WHERE id = ?", (cluster_id,)
+        )
     conn.commit()
     conn.close()
     return {"status": "ok"}
@@ -247,6 +267,16 @@ def mark_drafted(cluster_id: int):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/env-check")
+def env_check():
+    """Temporary: confirm ADMIN_API_KEY is loaded. Remove after debugging."""
+    key = os.environ.get("ADMIN_API_KEY")
+    return {
+        "admin_key_set": key is not None,
+        "admin_key_length": len(key) if key else 0
+    }
     
 @app.post("/reset", dependencies=[Depends(verify_admin_key)])
 def reset_db():
